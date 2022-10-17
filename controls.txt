@@ -1,0 +1,7 @@
+Rat-Man Controls:
+
+Use the arrow keys to change the direction that Rat-Man will walk in.
+Left arrow key goes left.
+Right arrow key goes right.
+Up arrow key goes up.
+Down arrow key goes down.
