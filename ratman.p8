@@ -1,526 +1,953 @@
 pico-8 cartridge // http://www.pico-8.com
 version 38
 __lua__
--- init
+-- init and level helper
 
 function _init()
 
-	cls(0)
-	intro_time = 0
-	mode = "start"
+	intro_time=0
 	
+	states={
+		menu=1,intro=2,
+		playing=3,dying=4,
+	 finish=5
+	}
+	
+	left=0
+	right=1
+	up=2
+	down=3
+
+	game={speed=1,level=1,state=1}
+	cheeses={}
+	ratman={}
+	ghosts={}
+	intersection={}
+
+	timer={}
+	timer.fright=0
+	timer.dying =0 
+
+	score=0
+	
+	cheese={}
+
+	function cheese.new(x,y,power)
+	
+  local c={}
+  c.x=x
+  c.y=y
+  c.power=power
+  return c
+ 
+	end
+	
+	function griditem(grid,x,y)
+	
+  local l=grid[y]
+  local v=sub( l, x, x)
+  if (v=="-") return true
+  if (v=="o") return true
+  if (v==".") return true
+  return false
+  
+	end
+
+	function parsegrid(grid)
+  cheeses={}
+  for y=2,#grid-1 do
+   l=grid[y]
+   for x=2,#l-1 do
+    v=sub(l,x,x)
+    if v=="." then
+     add(cheeses,
+     cheese.new(x*4-2,y*4-2,false))
+    elseif v=="o" then
+     add(cheeses,
+     cheese.new(x*4-2,y*4-2,true))
+    end
+      
+    local ctr=griditem(grid,x,y)
+    local up=griditem(grid,x,y-1)     
+    local down=griditem(grid,x,y+1)
+    local left=griditem(grid,x-1,y)
+    local rght=griditem(grid,x+1,y)
+      
+    if (ctr and (up or down) and
+     (left or rght)) then
+     local key = (x*4-2)..","..(y*4-2)
+     intersection[key]={
+     up=up,
+     down=down,
+     left=left,
+     right=rght
+     }
+    end
+   end
+  end
+  
+  -- special cases
+  -- ghost exit
+  intersection[(14*4)..","..(12*4-2)]={
+  up=false,
+  down=false,
+  left=true,
+  right=true
+  }
+	end
+
+
+
 end
 
+map1={
+"                            ",
+" o...........  ...........o ",
+" .    .     .  .     .    . ",
+" .    .     .  .     .    . ",
+" .    .     .  .     .    . ",
+" .......................... ",
+" .    .  .        .  .    . ",
+" .    .  .        .  .    . ",
+" ......  ....  ....  ...... ",
+"      .     -  -     .      ",
+"      .     -  -     .      ",
+"      .  ----------  .      ",
+"      .  -        -  .      ",
+"      .  -        -  .      ",
+" -----.---        ---.----- ",
+"      .  -        -  .      ",
+"      .  -        -  .      ",
+"      .  ----------  .      ",
+"      .  -        -  .      ",
+"      .  -        -  .      ",
+" ............  ............ ",
+" .    .     .  .     .    . ",
+" .    .     .  .     .    . ",
+" ...  .......--.......  ... ",
+"   .  .  .        .  .  .   ",
+"   .  .  .        .  .  .   ",
+" ......  ....  ....  ...... ",
+" .          .  .          . ",
+" .          .  .          . ",
+" o........................o ",
+"                            "
+}
 
 -->8
 -- draw
 
 function _draw()
-	
-	if mode == "start" then
-		draw_start()
-	elseif mode == "game" then
-		draw()
-	elseif mode == "over" then
-		draw_over()
-	end
-	
-end
-
--->8
--- update
-
-function _update60()
-	intro_time += 1
-	if mode == "start" then
-		start()
-	elseif 
-		mode == "game" then
-		player_update()
-		enemy_update()
-		player_animations()
-		grid_x = flr(player.x/8)
-		grid_y = flr(player.y/8)
-		flag_tile = fget(mget(x1,y1))
-	elseif mode == "over" then
-		start_over()
-	end
-	
-end
-
-
--->8
--- collisions
-
-function collision_object(
-
-	x1,y1,
-	w1,h1,
-	x2,y2,
-	w2,h2)
-	
-	local collide = false
-	local xs = w1*0.5 + w2*0.5
-	local ys = h1*0.5 + h2*0.5
-	local xd = abs((x1+(w1/2))-(x2+(w2/2)))
-	local yd = abs((y1+(h1/2))-(y2+(h2/2)))
-
-	if xd<xs and yd<ys then
-		hit = true
-	else
-		hit = false
-	end
-		
-	return hit
-
-end
-
-function collision_map(obj,dir,flag)
-
- local x=obj.x  local y=obj.y
- local w=obj.w  local h=obj.h
-
- local x1=0	 local y1=0
- local x2=0  local y2=0
-
- if dir=="left" then
-   x1=x-1  y1=y+1
-   x2=x-1  y2=y+5
-
- elseif dir=="right" then
-   x1=x+8  y1=y+1
-   x2=x+8  y2=y+5
-
- elseif dir=="up" then
-   x1=x+2  y1=y-1
-   x2=x+6  y2=y-1
-
- elseif dir=="down" then
-   x1=x+1  y1=y+8
-   x2=x+5  y2=y+8
-   
- elseif dir=="standing" then
- 		x1=x-1  y1=y
- 		x2=x    y2=y
- end
- 
-	x1r=x1 y1r=y1
-	x2r=x2 y2r=y2
-	
- --pixels to tiles
- x1/=8    y1/=8
- x2/=8    y2/=8
-
- if fget(mget(x1,y1), flag)
- or fget(mget(x1,y2), flag)
- or fget(mget(x2,y1), flag)
- or fget(mget(x2,y2), flag) then
-   return true
- else
-   return false
- end
-
-end
-
-	function collision_cheese(a,b)
- local a_left=a.x
- local a_top=a.y
- local a_right=a.x+a.w-1
- local a_bottom=a.y+a.h-1
- 
- local b_left=b.x
- local b_top=b.y
- local b_right=b.x+b.w-1
- local b_bottom=b.y+b.h-1
-
- if a_top>b_bottom then return false end
- if b_top>a_bottom then return false end
- if a_left>b_right then return false end
- if b_left>a_right then return false end
- 
- return true
-end
--->8
--- handling
-
-// movement
-function player_update()
-	
-	if btn(⬅️) then
-		if collision_map(player,"left",0) then
-		player.x += 1
-		end
-		player.dir = "left"
-		player.moving = "true"
-		player.x -= player.speed
-		
- 	elseif btn(➡️) then
- 		if collision_map(player,"right",0) then
-				player.x -= 1
-			end
- 	 player.dir = "right"
- 	 player.moving = "true"
-  	player.x += player.speed
-  	
- 	elseif btn(⬆️) then
- 		if collision_map(player,"up",0) then
-				player.y += 1
-			end
- 	 player.dir = "up"
- 	 player.moving = "true"
- 	 player.y -= player.speed
- 	 
- 	elseif btn(⬇️) then
- 		if collision_map(player,"down",0) then
-				player.y -= 1
-			end
- 		player.dir = "down"
- 		player.moving = "true"
- 	 player.y += player.speed	 
- 	else
- 		player.dir = "none"
- 		player.moving = "false"
-	end
-	
-	if collision_object(
-			player.x,player.y,
-			player.w,player.h,
-			cat.x,cat.y,cat.w,cat.h) then
-				player.x = 64
-				player.y = 80
-				player.lives -= 1
-	end
-	
-	if player.lives == 0 then
-		mode = "over"
-	end
-	
- for newcheese in all(cheeses) do
- 	if collision_cheese(newcheese, player) then
- 		del(cheeses,newcheese)
- 		score+=10
- 		cheese_count +=1
- 		sfx(2)
- 	end
-	end
-	
-	if cheese_count == cheese_start_count then
-		mode = "over"
-	end
-	
-
-	
-end
-
-function enemy_update()
-
-end
--->8
--- update drawing
-
-function draw_start()
-	//draw_intro()
-	cls()
-//	print("welcome to rat-man", 30, 100, 12)
-	//print("press x to start", 34, 110, 7)
-	draw_intro()
-	
-
-end
-
-function draw()
 
 	cls()
-	map(0,0)
-	spr(player.sp,player.x,player.y,1,1)
-	spr(cat.sp,cat.x,cat.y,1,1)
-	//rect(x1r,y1r,x2r,y2r)
-	print("score:" ..score,0,0,7)
-	//print("coords:".. grid_x..","..grid_y,30,0,7)
-	//print(flag_tile,80,0,7)
-	draw_cheese()
-	for i=0, 2 do
-		if player.lives>i then
-		spr(15,96+i*10,120)
+ map( 0, 0, 0, 0, 14, 16)
+ print("score:".. score, 0, 123, 7)
+	print(timer.fright,95,70,7) 
+
+ if game.state == states.menu then
+  cls()
+  draw_intro()
+  return
+ end
+  
+ for c in all(cheeses) do
+  if c.power then
+ 		spr(41,c.x-4,c.y-4)
+  else
+   rectfill(c.x,c.y,c.x,c.y, 10)
+  end
+ end
+ 
+ for i =1,#buls do
+ 	local mybul = buls[i]
+ 	spr(142,mybul.x,mybul.y)
+ end
+  
+ if game.state == states.playing then
+  ratman_animations() 
+ elseif game.state == states.dying then
+  ratman.sprite = 81
+  ratman.drawsprite = ratman.sprite
+ end
+  
+ spr(ratman.drawsprite,ratman.x-3, ratman.y-4)
+ 
+ for g in all(ghosts) do
+  spr( g.sprite, g.x-3, g.y-4)
+  spr( g.eyesspr+g.dir, g.x-2, g.y-3)
+ end
+  
+ for i=0, 2 do
+		if game.lives>i then
+			spr(29,113,105+i*8)
 		else
-			spr(31,96+i*10,120)
-		end
-	end
-	if score > 300 then
-		spr(36,60,72,1,1)
-	end		
-	
-	
-end	
-
-function draw_over()
-
-		cls(8)
-		print("game-over", 45, 40, 7)
-		print("press x to try again", 25, 80, 7)
-
-end
-
--- animations
-
-function player_animations()
-
-	if player.dir == "left" then
-		player.sp = 17 
-		if time()-player.anim_time>player.anim_wait then
-   player.anim_time=time()
-			player.sp += 1
-			if player.sp > 19 then
-				player.sp = 17
+			spr(30,113,105+i*8)
+			if game.lives<i-1 then
+				cls()
+				print("game-over",48,60,7)
+				print("press x to restart",30,70,7)
+				if btn(❎) then
+					newgame()
+				end
 			end
 		end
 	end
 	
- if player.dir == "right" then
- 	player.sp = 1
-		if time()-player.anim_time>player.anim_wait then
-   player.anim_time=time()
-			player.sp += 1
-			if player.sp > 3 then
-				player.sp = 1
-			end
-		end
+end
+
+function draw_intro()
+
+draw_logo()
+draw_rat()
+logo_sound()
+
+end
+
+function draw_rat()
+
+	if (intro_time > 100) then spr(217,35,40,3,3) end
+	if (intro_time > 100) then print("rat-man",50,66,12) end
+	if (intro_time > 130) then
+	print("welcome to rat-man", 30, 100, 12)
+	print("press x to start", 34, 110, 7)
 	end
- 
- if player.dir == "up" then
- 	 player.sp = 16
-		if time()-player.anim_time>player.anim_wait then
-   player.anim_time=time()
-			player.sp += 16
-			if player.sp > 32 then
-				player.sp = 16
-			end
-		end
- end
- 
- if player.dir == "down" then
- 		player.sp = 33
- 		if time()-player.anim_time>player.anim_wait then
-   player.anim_time=time()
-			player.sp += 1
-			if player.sp > 34 then
-				player.sp = 33
-			end
-		end
-	end
-	
-		if player.moving == false then
-			player.sp = player.sp
-		end
-		
-end
-
-function draw_cheese()
-
-	for i=1,#cheeses do
-  local mycheese=cheeses[i]
-  local col=10  
-  pset(mycheese.x,mycheese.y,col)
- end
 
 end
 
-
--->8
---update game
-
-function start()
-
-	if btnp(❎) then
-		start_game()
-	end
-	
-end
-
-function start_game()
-
-	mode = "game"
-	
-	player = {
-	
-	sp = 17,
-	x = 60,
-	y = 73,
-	w = 8,
-	h = 8,
-	moving = false,
-	speed = 1,
-	dir = left,
-	anim_time = 0,
-	anim_wait = 0.12,
-	can_shoot = true,
-	lives = 3,
-	
-}
-
-cat = {
-
-	sp = 38,
-	x = 60,
-	y = 35,
-	w = 8,
-	h = 8,
-	
-}
-
-cheeses={}
-cheese_count = 0
-cheese_start_count = 0
-
-for x=0,32,1 do
-  for y=0,32,1 do
-  	local newcheese={}
-  	local id = mget(x,y)
-  	if id == 24   then 
-  		newcheese.x=(x * 8 + 4)
-  		newcheese.y=(y * 8 + 4)
-  		newcheese.w = 1
-  		newcheese.h = 1
-  		add(cheeses,newcheese)
-  		cheese_start_count += 1
-  	end
-		end  
-end
-
-
-grid_x=player.x
-grid_y=player.y
-	
-x1r=0 y1r=0 x2r=0 y2r=0
-	
-score = 00
-
-end
-
-
-function start_over()
-
-	if btnp(❎) then
-		mode = "start"
-	end
-	
-end
--->8
 function draw_logo()
-//cls()
-if (intro_time > 20) then spr(20,79,48) end
-if (intro_time > 30) then spr(22,71,40) end
-if (intro_time > 40) then spr(54,87,48) end
-if (intro_time > 47) then spr(38,79,56) end
-if (intro_time > 50) then spr(37,71,56) end
-if (intro_time > 54) then spr(52,87,56) end
-if (intro_time > 56) then spr(6,71,48) end
-if (intro_time > 57) then spr(36,87,40) end
-if (intro_time > 58) then spr(21,79,40) end
-//draw_rat()
+
+	if (intro_time > 20) then spr(243,79,48) end
+	if (intro_time > 30) then spr(244,71,40) end
+	if (intro_time > 40) then spr(245,87,48) end
+	if (intro_time > 50) then spr(246,79,56) end
+	if (intro_time > 60) then spr(247,71,56) end
+	if (intro_time > 70) then spr(129,87,56) end
+	if (intro_time > 80) then spr(128,71,48) end
+	if (intro_time > 90) then spr(93,87,40) end
+	if (intro_time > 100) then spr(94,79,40) end
 
 end
 
 function logo_sound()
 
-if (intro_time == 20) then sfx(0) end
-
+	if (intro_time == 20) then sfx(0) end
 
 end
 
 
-function draw_intro()
-draw_logo()
-draw_rat()
-logo_sound()
+-->8
+-- update
+function _update()
+  
+  intro_time+=1
+  if game.state==states.menu then
+    if btn()>0 then
+      newgame()
+    end
+    return
+  end
+   
+  if game.state==states.intro then
+    timer.intro -= 1
+    if timer.intro==0 then
+      game.state=states.playing
+    end
+    return
+  end
+  
+  if game.state==states.finish and
+     btn()>0 then
+    game.state=states.playing
+  end
+  
+  if game.state==states.dying then
+    if timer.dying>0 then
+      timer.dying -= game.speed
+    else
+      resetcharacters()
+      game.state    = states.finish
+    end
+  end
+  
+  if game.state~=states.playing then
+    return
+  end
+  
+  game.playtime += 1
+  
+  if timer.fright>0 and ghost.state==uncaged then
+ 
+    timer.fright -= game.speed
+    if timer.fright < 0 then
+      for g in all(ghosts) do
+      		        if g.state ~= ghost.states.dead then
+          g.state=g.states.chase
+        end
+      end
+    end
+  end
+  
+  g = collision()
+  if( collision()) then
+    if g.state == ghost.states.fright then
+      g.state  =  ghost.states.dead
+    elseif g.state ~= ghost.states.dead then
+      death()
+      return
+    end
+  end
+  
+  
+  
+
+  update_ap()
+  
+  if #cheeses==0 then
+    finishlevel()
+    return
+  end
+  
+  move_ratman()
+		
+  for g in all(ghosts) do
+    if g.state==g.states.caged then
+      if g.freetime <= game.playtime or
+         g.freefood <= 244-#cheeses then
+        g:uncage()
+      end
+    else
+      g.drawsprite = g.sprite+flr(game.playtime/4)%2
+      move_ghost( g)
+    end
+  end
+
+ shoot()
+end 
+
+function shoot()
+if (btnp(❎)) then
+  	local newbul={}
+  	newbul.x=ratman.x
+  	newbul.y=ratman.y-3
+  	add(buls,newbul)
+ 	end
+ 	
+ 	for i=#buls,1,-1 do
+  local mybul=buls[i]
+  if #buls >1 then
+  	del(buls,mybul)
+  end
+  if ratman.dir==left then
+  mybul.x=mybul.x-4
+  	if mybul.x<0 then
+  	 del(buls,mybul)
+  	end
+  end
+  if ratman.dir==right then
+  	mybul.x=mybul.x+4
+  	if mybul.x>128 or ratman.dir==left then
+   del(buls,mybul)
+  end
+  end
+  if ratman.dir==up then
+  mybul.y=mybul.y-4
+  if mybul.y<0 then
+   del(buls,mybul)
+  end
+  end
+  if ratman.dir==down then
+  mybul.y=mybul.y+4
+  if mybul.y>128 then
+   del(buls,mybul)
+  end
+  end
+  for g in all(ghosts) do
+    if abs(g.x-mybul.x) + abs(g.y-mybul.y) < 8 then
+      g.state = ghost.states.dead
+      return g
+    end
+ 	end
+	  return false
+ end
+ 
+end
+ 
+
+ 
+-->8
+-- ratman helper
+
+function collision()
+ for g in all(ghosts) do
+  if abs(g.x-ratman.x) + abs(g.y-ratman.y) < 8 then
+   return g
+  end
+ end
+  return false
 end
 
-function draw_rat()
-if (intro_time > 70) then spr(64,35,40,3,3) end
-if (intro_time > 70) then print("rat-man",50,66,12) end
-if (intro_time > 130) then
-print("welcome to rat-man", 30, 100, 12)
-print("press x to start", 34, 110, 7)
+function death()
+ game.lives -= 1
+ game.state  = states.dying
+ timer.dying = 20
 end
 
+function update_ap()
+ ratman.ap += ratman.speed * game.speed
+ for g in all(ghosts) do
+  g.ap += (g:speed()) * game.speed
+ end
+end
+
+function move_ratman()
+  
+ if (btn(up))   newdir=up
+ if (btn(left)) newdir=left
+ if (btn(down)) newdir=down
+ if (btn(right))newdir=right
+
+ local key = (ratman.x)..","..(ratman.y)
+    
+ local k = intersection[key]
+  
+ if k then
+    if newdir==up and k.up then
+      ratman.dir=newdir
+      ratman.y -= 1
+    elseif newdir==down and k.down then
+      ratman.dir=newdir
+      ratman.y += 1
+    elseif newdir==left and k.left then
+      ratman.dir=newdir
+      ratman.x -= 1
+    elseif newdir==right and k.right then
+      ratman.dir=newdir
+      ratman.x += 1
+    else
+      ratman.ap = 0
+    end
+  else
+    if newdir==up and
+       ratman.dir==down then
+         ratman.dir=up
+    elseif newdir==down and
+       ratman.dir==up then
+         ratman.dir=down
+    elseif newdir==left and
+       ratman.dir==right then
+         ratman.dir=left
+    elseif newdir==right and
+       ratman.dir==left then
+         ratman.dir=right
+    end
+    
+    if ratman.ap>=1 then
+      ratman.x += xoffset( ratman.dir)
+      ratman.y += yoffset( ratman.dir)
+      ratman.ap -= 1
+      
+      if ratman.x<0 then
+        ratman.x = 112+ratman.x
+      elseif ratman.x>112 then
+        ratman.x -= 112
+      end
+    end
+    
+    eatcheese(ratman.x, ratman.y)
+  end
+  
+  if ratman.ap >= 1 then
+    move_ratman()
+  end
+end
+
+function xoffset( dir)
+  if(dir==left)  return -1
+  if(dir==right) return  1
+  return 0
+end
+
+function yoffset( dir)
+  if(dir==up)   return -1
+  if(dir==down) return  1
+  return 0
+end
+
+function oppdir( d)
+  if(d==left)  return right
+  if(d==right) return left
+  if(d==up)    return down
+  if(d==down)  return up
+end
+
+function eatcheese(x,y)
+  for c in all(cheeses) do
+    if c.x==x and c.y==y then
+      del( cheeses, c)
+      sfx(3+(#cheeses)%2)
+      score += 10
+      ratman.ap -= 0.1
+      
+      if c.power then
+        frighten()
+        score += 40
+        ratman.ap -= 0.2
+      end
+    end
+  end
+end
+
+-- animation
+
+function ratman_animations()
+
+  if ratman.dir == left then
+    ratman.drawsprite = 8 
+    if time()-ratman.anim_time>ratman.anim_wait then
+   ratman.anim_time=time()
+      ratman.drawsprite += 1
+      if ratman.drawsprite > 20 then
+        ratman.drawsprite = 8
+      end
+    end
+  end
+  
+ if ratman.dir == right then
+  ratman.drawsprite = 11
+    if time()-ratman.anim_time>ratman.anim_wait then
+   ratman.anim_time=time()
+      ratman.drawsprite += 1
+      if ratman.drawsprite > 33 then
+        ratman.drawsprite = 11
+      end
+    end
+  end
+ 
+ if ratman.dir == up then
+   ratman.drawsprite = 25
+    if time()-ratman.anim_time>ratman.anim_wait then
+   ratman.anim_time=time()
+      ratman.drawsprite += 1
+      if ratman.drawsprite > 26 then
+        ratman.drawsprite = 25
+      end
+    end
+ end
+ 
+ if ratman.dir == down then
+    ratman.drawsprite = 27
+    if time()-ratman.anim_time>ratman.anim_wait then
+   ratman.anim_time=time()
+      ratman.drawsprite += 1
+      if ratman.drawsprite > 28 then
+        ratman.drawsprite = 27
+      end
+    end
+  end
+  
+    if ratman.moving == false then
+      ratman.drawsprite = ratman.drawsprite
+    end
+    
+end
+-->8
+-- enemies helper
+
+function move_ghost(g)
+  
+ if g.ap<1 then
+  return
+ end
+  
+ local exits=gexits(g)
+  
+ if #exits>0 and g.state==g.states.fright then
+   del(exits,oppdir(g.dir))
+   g.dir=exits[irnd(1,#exits)]
+  elseif #exits>0 then
+   del(exits,oppdir(g.dir))
+   local tx, ty 
+   if g.name=="zena" then
+    tx=ratman.x
+    ty=ratman.y
+   elseif g.name=="ava" then
+    tx=ratman.x+xoffset(ratman.dir)*16
+    ty=ratman.y+yoffset(ratman.dir)*16
+    if ratman.dir==up then
+     tx=ratman.x-16
+    end
+   elseif g.name=="hazelle" then
+    tx=ratman.x+xoffset(ratman.dir)*8
+    ty=ratman.y+yoffset(ratman.dir)*8
+    if ratman.dir==up then
+     tx=ratman.x-8
+    end
+    tx=tx-(ghosts[1].x-tx)
+    ty=ty-(ghosts[1].y-ty)
+   elseif g.name=="andrew" then
+    if distance(g.x,g.y,ratman.x,ratman.y)>32 then
+     tx=ratman.x
+     ty=ratman.y
+    else
+     tx=0
+     ty=128
+    end
+  end
+    
+  if g.state==ghost.states.dead then
+   if g.x==56 and g.y==46 then
+    g.state=ghost.states.caged
+    g.y=54
+    else
+     tx=56
+     ty=54
+   end
+  end
+    
+  local closest=500
+    for e in all(exits) do
+      local dist=distance(tx,ty,g.x+xoffset(e),g.y+yoffset(e))
+      if dist<closest then
+       g.dir=e
+       closest=dist
+      end
+    end
+  end
+  
+  g.x+=xoffset(g.dir)
+  g.y+=yoffset(g.dir)
+  g.ap-=1
+    
+  if g.x<0 then
+    g.x+=112
+  elseif g.x>112 then
+    g.x-=112
+  end
+  
+  if g.ap >= 1 then
+    move_ghost(g)
+  end
+end
+
+function irnd(n,m)
+  return flr(rnd(m-n+1))+n
+end
+
+// checks to see if object is
+// in the tunnel (slows down cat)
+function intunnel(o) 
+ if o.y==58 then
+  if o.x<26 or o.x>90 then
+    return true
+  end
+ end
+ return false
+end
+
+// looks through possible ghost
+// exits
+function gexits( g)
+  
+ local dirs = {}
+ local key = (g.x)..","..(g.y)
+
+ local k = intersection[key]
+  
+ if k then
+  if k.up    then add( dirs, up)    end
+  if k.down  then add( dirs, down)  end
+  if k.left  then add( dirs, left)  end
+  if k.right then add( dirs, right) end
+ end
+
+ return dirs
+end
+
+function distance( x1, y1, x2, y2)
+  return sqrt((x1-x2)^2+(y1-y2)^2)
+end
+
+  ghost={}
+  ghost.__index=ghost
+  ghost.states={
+  chase=1,
+  scatter=2,
+  fright=3,
+  dead=4,
+  caged=5
+}
+
+function ghost.new(x,y,name,speed)
+ local g={}
+ setmetatable(g,ghost)
+  g.x        = x
+  g.y        = y
+  g._speed   = speed
+  g.name     = name
+  g.dir      = left
+  g.ap       = 0
+  g.freetime = 0 -- how long til release from cage
+  g.freefood = 0 -- how many cheese til release from cage
+  g.state    = ghost.states.chase
+  g.sprite   = 53
+  g.eyesspr  = 60
+  
+  if g.name=="zena" then
+    g.sprite   = 54
+    g.state    = g.states.chase
+    g.freetime = 10
+  elseif g.name=="ava" then
+    g.sprite   = 55
+    g.state    = g.states.caged
+    g.freetime = 20
+    g.freefood = 30
+  elseif g.name=="hazelle" then
+    g.sprite   = 56
+    g.state    = g.states.caged
+    g.freetime = 32
+    g.freefood = 60
+  elseif g.name=="andrew" then
+    g.sprite   = 57
+    g.state    = g.states.caged
+    g.freetime = 44
+    g.freefood = 90
+  end
+  
+  return g
+end
+
+
+function ghost:speed()
+  if self.state==ghost.states.dead then
+    return 2
+  elseif intunnel( self) then
+    return 0.4
+  else
+    return self._speed
+  end
+end
+
+function ghost:uncage()
+  if self.state == ghost.states.caged then
+   self.x     = 14*4
+   self.y     = 14*4-2
+   self.dir   = up
+   self.ap    = 0
+   self.state = self.states.chase
+  end
+end
+
+function ghost:frighten()
+  if self.state==ghost.states.chase or
+   self.state==ghost.states.scatter or
+   self.state==ghost.states.fright then
+   self.state=ghost.states.fright
+   self.dir=oppdir( self.dir)
+  end
+end
+
+function frighten()
+ for g in all(ghosts) do
+  g:frighten()
+ end
+ timer.fright = 400 - (game.level*20)
+end
+-->8
+-- game state
+
+function newgame()
+ timer.intro=10
+ score=0
+ game.level=1
+ game.lives=3
+ newlevel()
+ game.state=states.intro
+end
+
+function newlevel()
+ cheeses={}
+ resetcharacters()
+ game.speed=1+(game.level*0.2)
+ game.playtime=0
+ game.state=states.finish
+ parsegrid(map1)
+end
+
+function finishlevel()
+ game.state=states.finish
+ newlevel()
+end
+
+function resetcharacters()
+ ghosts={}
+ buls={}
+ ratman={
+  x=56,
+  y=94,
+  ap=0,
+  speed=0.8,
+  dir=left,
+  sprite=8,
+  anim_time=0,
+	 anim_wait=0.12,
+ }
+ 
+ add(ghosts,ghost.new(56,46,"zena",0.6))
+ add(ghosts,ghost.new(48,58,"ava",0.6))
+ add(ghosts,ghost.new(56,58,"hazelle",0.6))
+ add(ghosts,ghost.new(64,58,"andrew",0.6))
+ 
+ newdir=ratman.dir
+ game.playtime=0
 end
 __gfx__
-000000000055005500550055005500550000000000000000000000040000000000000000000000007777cc00001cc1000000000000000000cccccccc08800880
-00000000005e00e5005e00e5005e00e500000000000990000000000a000000000000000000000000000000c001c11c100111111111111110cccccccc88888888
-007007000005555000055550000555500088880000939900000000aa0000000000000000000000000000000c01c11c101cccccccccccccc1cccccccc88888888
-000770000005c5c00005c5c0e005c5c00808088009a9999000000aaa0000000000000000000000000000000c01c11c10c11111111111111ccccccccc88888888
-000770000e55555eee55555e0e55555e0b8080b009a99940000aaaa90000001111111111110000000000000c01c11c10c11111111111111ccccccccc08888880
-00700700e555555005555550055555500bb33b30009994004aaaaa99000001cccccccccccc1000000000000c01c11c101cccccccccccccc1cccccccc00888800
-00000000055f55f005f55f5005f55f500b33bb30000940000099999000001cccccccccccccc100000000000c01c11c100111111111111110cccccccc00088000
-0000000000f00f0000f00f00000f00f000000000000000000000000000001cc1111111111cc100000000000c01c11c100000000000000000cccccccc00000000
-0000e00055005500550055005500550000030000400000000000000000001cc1000000001cc1000000cc777701c11c100000000001c11c100000000008800880
-000c5c005e00e5005e00e5005e00e50000333300444400000d0000d000001cc1000000001cc100000c00000001c11c101111111101c11c100000000080088008
-005555500555500005555000055550000333333040044088ded00ded00001cc1000000001cc10000c000000001c11c10cccccccc01c11c100000000080000008
-005e5e500c5c50000c5c50000c5c500e08033380440048ef07bdd7b000001cc1000000001cc10000c000000001c11c101111111101c11c100000000080000008
-00555550e55555e0e55555eee55555e008880880048008eed7bdd7bd00001cc1000000001cc10000c000000001c11c101111111101c11c100000000008000080
-005555500555555e0555555005555550080880808ef80088d0deed0d00001cc1000000001cc10000c000000001c11c10cccccccc01c11c100000000000800800
-0005e5000f55f55005f55f5005f55f50008808008ee80000dd0000dd00001cc1000000001cc10000c000000001c11c101111111101c11c100000000000088000
-000ee00000f00f0000f00f000f00f00000088000088000000dddddd000001cc1000000001cc10000c0000000001cc1000000000001c11c100000000000000000
-0000e000000ee00000ee00000004408000330000000000000000000000001cc1111111111cc10000c00000001cccccc100000011000000000000000000000000
-000c5c00005e5000005e5000000404a800039000033344400900009000001cccccccccccccc10000c000000011cccc110111111c000111111111100000000000
-005555500555550005555500006700800099aa003b0b34449e9009e9000001cccccccccccc100000c000000001c11c101ccccccc0011cccccccc110000000000
-005e5e5005555500055555000667700009999a903070344407399730000000111111111111000000c000000001c11c101c111111011cc111111cc11000000000
-0055555005e5e50005e5e50066667700099999903b7b344497399739000000000000000000000000c000000001c11c101c11111101cc11111111cc1000000000
-005555500555550005555500666666000099990030b03444909ee909000000000000000000000000c000000001c11c101ccccccc01c111cccc111c1000000000
-0005e50000c5c00000c5c00006666000000990000333444499000099000000000000000000000000c000000001c11c100111111c01c11cccccc11c1000000000
-0000ee00000e0000000e000000660000000000000004444009999990000000000000000000000000c0000000001cc1000000001101c11cc11cc11c1000000000
-00000000000000000000000000000000000000000004000000000000c00000000000000c000000000000000c000000111100000001c11cc11cc11c1000000000
-00000000000000000000000000000000000040000004400003000030c00000000000000c000000000000000c0111111cc111111001c11cccccc11c1000000000
-0000a900000082000000b3000000000000014000ef2ef2ef3e3003e3c00000000000000c000000000000000c1cccccccccccccc101c111cccc111c1000000000
-000aa99000088220000bb3300009900000cc1100ee2ee2ee07d337d0c00000000000000c000000000000000cc11111111111111c01cc11111111cc1000000000
-0099aaa0002288800033bbb00009900001c111102ef2ef2037d337d3c00000000000000c000000000000000cc11111111111111c011cc111111cc11000000000
-0a99a900082282000b33b30000000000011111100ee2ee20303ee303c00000000000000c000000000000000c1cccccccccccccc10011cccccccc110000000000
-0000000000000000000000000000000000111100002ef200330000330c000000000000c0000000000000000c0111111cc1111110000111111111100000000000
-0000000000000000000000000000000000011000000ee0000333333000cccccccccccc00cccccccc0000000c0000000111000000000000000000000000000000
-55555000000000555555000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-55555000000000555555000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-55555000000000555555000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-555ee000000000ee5555000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-555ee000000000ee5555000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-00055555555555550000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-00055555555555550000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-00055555555555550000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-000ccc55555ccc550000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-000ccc55555ccc550000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-000ccc55555ccc550000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-eee555555555555555eee00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-eee555555555555555eee00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-eee555555555555555eee00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-000555555555555555555eee00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-000555555555555555555eee00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-000555555555555555555eee00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-00055555555555555555550000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-000fff5555555fff5555550000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-000fff5555555fff5555550000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-000fff5555555fff5555550000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-000000fff0000000fff0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-000000fff0000000fff0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-000000fff0000000fff0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+000000000000000000000000000000000000000000000000000001c0000001c05500550055005500550055000055005500550055005500550000000000000000
+000000000cccccccccccccccccccccccccccccccccccccc0000001c0000001c05e00e5005e00e5005e00e500005e00e5005e00e5005e00e50000000000000000
+000000000c1111111111111111111ccccccc1111111111c0000001c0111111c00555500005555000055550000005555000055550000555500000000000000000
+000000000c10000000000000000001ccccc10000000001c0000001c0ccccccc00c5c50000c5c50000c5c500e0005c5c00005c5c0e005c5c00001111111111100
+000000000c100000000000000000001ccc100000000001c0000001c000000000e55555e0e55555eee55555e00e55555eee55555e0e55555e001ccccccccccc10
+000000000c100000000000000000001ccc100000000001c0000001c0000000000555555e0555555005555550e555555005555550055555500001111111111100
+000000000c100000000000000000001ccc100000000001c0000001c0000000000f55f55005f55f5005f55f50055f55f005f55f5005f55f500000000000000000
+000000000c100000000000000000001ccc100000000001c0000001c00000000000f00f0000f00f000f00f00000f00f0000f00f00000f00f00000000000000000
+0000001c0c1000000000000000000000000000000000000000000000cc100000000000000000e0000000e000000ee00000ee0000088008800880088010000000
+0000001c0c1000000000000000000000000000000000000000000000cc10000000000000000c5c00000c5c00005e5000005e5000888888888008800810000000
+0000001c0c1000000000111111111100000000011111111111111100cc1000000000000000555550005555500555550005555500888888888000000810000000
+0000001c0c100000000111cccccc1110000000111ccccccccccc1110cc10000000000000005e5e50005e5e500555550005555500888888888000000810000000
+0000001c0c10000000011cccccccc11000000011ccccccccccccc110cc10000000000000005555500055555005e5e50005e5e500088888800800008010000000
+0000001c0c10000000011cccccccc11000000011ccccccccccccc110cc1000000000000000555550005555500555550005555500008888000080080010000000
+0000001c0c10000000011cccccccc11000000011ccccccccccccc110cc100000000000000005e5000005e50000c5c00000c5c000000880000008800010000000
+000000010c10000000011cccccccc11000000011ccccccccccccc1101100000000000000000ee0000000ee00000e0000000e0000000000000000000010000000
+0000000000000000000011111111110000000011cccccccccccc1110000000111110000000000000000000000000000000000000011ccccc0000001c00000000
+00000000000000000000000000000000000000011111111111111100000000011100000000000000000000000000000000000000001111110000001ccccccccc
+0000111111111100000000000000000000000000000000000000000000000000000000000000a900001111111111111110000000000000000000001c1111111c
+000111cccccc111000000000000000000000000000000000000000000000000000000000000aa9900111ccccccccccc111000000000000000000001c0000001c
+00011cccccccc110000000000000000000000000000000000000000000000000000000000099aaa0011ccccccccccccc11000000000000000000001c0000001c
+000111cccccc1110000000000000000000000000000000000000000000000000000000000a99a900011ccccccccccccc11000000000000000000001c0000001c
+00001111111111000000000000000000000000000000000000000000000000000000000000000000011ccccccccccccc11000000000000000000001c0000001c
+00000000000000000000000000000000000000000000000000000000000000000000000000000000011ccccccccccccc11000000000000000000001c0000001c
+00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+0000000000000000000000000000000000000000000000000d0000d00900009003000030080000800c0000c00000000000000000000000000000000000000000
+000000011100000000011111111111111111111111111100ded00ded9e9009e93e3003e38e8008e8c0c00c0c0000000087008700780078008708700078007800
+000000111110000000111ccccccccccccccccccccccc1110000dd000000990000003300000088000000cc0000000000087008700780078008708700078007800
+00000011c11000000011ccccccccccccccccccccccccc110d00dd00d900990093003300380088008c00cc00c0000000000000000000000000000000000000000
+0000001ccc10000000111ccccccccccccccccccccccc1110d0deed0d909ee909303ee303808ee808c0c00c0c0000000000000000000000000000000000000000
+0000001ccc100000000111111111111ccc11111111111100dd0000dd990000993300003388000088cc0000cc0000000000000000000000000000000000000000
+0000001ccc100000000000000000001ccc100000000000000dddddd00999999003333330088888800cccccc00000000000000000000000000000000000000000
+000000000c10000000000000000000000000001ccc100000000000000000001ccc100000000000000000001ccc10000000000000000000000000001c10000000
+000000000c10000000000000000000000000001ccc100000000000000000001ccc100000000000000000001ccc10000000000000000000000000001c10000000
+000000000c10000000000000000000000000001ccc100000000000000000001ccc100000000000000000001ccc10000000000000000000000000001c10000000
+000000000c10000000000000000000000000001ccc100000000000000000001ccc100000000000000000001ccc10000000000000000000000000001c10000000
+000000000c10000000000000000000000000001ccc100000000000000000001ccc100000000000000000001ccc10000000000000000000000000001c10000000
+000000000c10000000000000000000000000001ccc100000000000000000001ccc100000000000000000001ccc10000000000000000000000000001c10000000
+000000000c11111111111111111110000000001ccc111111111111000000001ccc100000000111111111111ccc10000000001111111111111111111c10000000
+000000000cccccccccccccccccccc1000000001ccccccccccccc11100000001ccc10000000111ccccccccccccc1000000001cccccccccccccccccccc10000000
+0000000000666000000000000000c1000000001cccccccccccccc11000000011c11000000011cccccccccccccc1000000001c000000000000000000000000000
+0000000006666600010000100000c1000000001ccccccccccccc1110000000111110000000111ccccccccccccc1000000001c000033344400900009000000000
+0000000006060660171001710000c1000000001ccc111111111111000000000111000000000111111111111ccc1000000001c0003b0b34449e9009e900000000
+0000000060060060011111100000c1000000001ccc100000000000000000000000000000000000000000001ccc1000000001c000307034440739973000000000
+0000000060060060117117110000c1000000001ccc100000000000000000000000000000000000000000001ccc1000000001c0003b7b34449739973900000000
+0000000066606660101771010000c1000000001ccc100000000000000000000000000000000000000000001ccc1000000001c00030b03444909ee90900000000
+0000000006666600110000110000c1000000001ccc100000000000000000000000000000000000000000001ccc1000000001c000033344449900009900000000
+0000000006060600011111100000c1000000001ccc100000000000000000000000000000000000000000001ccc1000000001c000000444400999999000000000
+0000000000000000000000000000c1000000001ccc1000000000000000000000000000000000000000000000000000000001c000000000000000000000000000
+0000000000000000000000000000c1000000001ccc1000000000000000000000000000000000000000000000000000000001c000000000000000000000000000
+0000000000000000000000000000c1000000001ccc1000000011111111110000000001111111111000000000000000000001c000000000000000000000000000
+0000000000000000000000000000c1000000001ccc100000001cccccccc10000000001cccccccc1000000000000000000001c000000000000000000000000000
+00000000cccccccc00000000ccccc10000000011c1100000001c1111111100000000011111111c1000000000000000000001cccc00000000cccccccc10000000
+000000001111111100000000111111000000001111100000001c1000000000000000000000001c100000000000000000000011110000000011111111c0000000
+000000000000000000000000000000000000000111000000001c1000000000000000000000001c10000000000000000000000000000000000000000010000000
+000000000000000000000000000000000000000000000000001c1000000000000000000000001c10000000000000000000000000000000000000000000000000
+000000000000000000000000000000000000000000000000001c1000cccccccc1100000000001c10000000000000000000000000000000000000000000000000
+000000000000000000000000000000000000000000000000001c1000111111111000000000001c10000000000000000000000000000000000000000000000000
+000000000000000000000000000000000000000000000000001c1000000000000000000000001c10000000000000000000000000000000000000000000000000
+000000000000000000000000000000000000000000000000001c1000000000000000000000001c10000000000000000000000000000000000000000000000000
+000000000000000000000000000000000000000000000000001c1000000000000000000000001c10000000000000000000000000000000000000000000000000
+000000000000000000000000000000000000000000000000001c1000000000000000000000001c10000000000000000000000000000000000000000000000000
+000000001111111111111111111111000000000111000000001c1000000000000000000000001c10000000011100000000011111111111111111111110000000
+00000000cccccccccccccccccccccc100000001111100000001c1000000000000000000000001c100000001111100000001cccccccccccccccccccccc0000000
+00000000000400000000000000000c1000000011c1100000001c1111111111111111111111111c1000000011c1100000001c0000000000000004408010000000
+00004000000440000300003000000c100000001ccc100000001ccccccccccccccccccccccccccc100000001ccc100000001c000000000000000404a800000000
+00014000ef2ef2ef3e3003e300000c100000001ccc100000001111111111111111111111111111100000001ccc100000001c0000000000000067008000000000
+00cc1100ee2ee2ee07d337d000000c100000001ccc100000000000000000000000000000000000000000001ccc100000001c0000000000000667700000000000
+01c111102ef2ef2037d337d300000c100000001ccc100000000000000000000000000000000000000000001ccc100000001c0000000000006666770000000000
+011111100ee2ee20303ee30300000c100000001ccc100000000000000000000000000000000000000000001ccc100000001c0000000000006666660000000000
+00111100002ef2003300003300000c100000001ccc100000000000000000000000000000000000000000001ccc100000001c0000000000000666600000000000
+00011000000ee0000333333000000c100000001ccc100000000000000000000000000000000000000000001ccc100000001c0000000000000066000000000000
+00000000000000000000000000000c100000001ccc100000000000000000000000000000000000000000001ccc100000001c0000000000000000000000000000
+00000000000000000000000000000c100000001ccc100000000000000000000000000000000000000000001ccc100000001c0000000000000000000000000000
+00000000000000000000000000000c100000001ccc100000000111111111111111111111111111000000001ccc100000001c0000000000000000000000000000
+00000000000000000000000000000c100000001ccc10000000111ccccccccccccccccccccccc11100000001ccc100000001c0000000000000000000000000000
+00000000000000000000000000000c1000000011c11000000011ccccccccccccccccccccccccc11000000011c1100000001c0000000000000000000000000000
+000000000ccccccccccccccccccccc10000000111110000000111ccccccccccccccccccccccc11100000001111100000001ccccccccccccccccccccc10000000
+000000000c11111111111111111111000000000111000000000111111111111ccc11111111111100000000011100000000011111111111111111111c10000000
+000000000c10000000000000000000000000000000000000000000000000001ccc10000000000000000000000000000000000000000000000000001c10000000
+000000000c10000000000000000000000000000000000000000000000000001ccc10000000000000000000000000000000000000000000000000001c10000000
+000000000c10000000000000000000000000000000000000000000000000001ccc10000000000000000000000000000000000000000000000000001c10000000
+000000000c10000000000000000000000000000000000000000000000000001ccc10000000000000000000000000000000000000000000000000001c10000000
+000000000c10000000000000000000000000000000000000000000000000001ccc10000000000000000000000000000000000000000000000000001c10000000
+000000000c10000000000000000000000000000000000000000000000000001ccc10000000000000000000000000000000000000000000000000001c10000000
+000000000c10000000000000000000000000000000000000000000000000001ccc10000000000000000000000000000000000000000000000000001c10000000
+000000000c10000000001111111111000000000111111111111111000000001ccc10000000011111111111111100000000011111111110000000001c10000000
+000000000c10000000011cccccccc110000000111ccccccccccc11100000001ccc10000000111ccccccccccc111000000011cccccccc11000000001c10000000
+000000000c10000000011ccccccccc1000000011ccccccccccccc11000000011c11000000011ccccccccccccc1100000001ccccccccc11000000001c10000000
+000000000c10000000001111111ccc10000000111ccccccccccc1110000000011100000000111ccccccccccc11100000001ccc11111110000000001c10000000
+000000000c10000000000000001ccc100000000111111111111111000000000000000000000111111111111111000000001ccc10000000000000001c10000000
+000000000c10000000000000001ccc100000000000000000000000000000000000000000000000000000000000000000001ccc10000000000000001c10000000
+000000000c10000000000000001ccc100000000000000000000000000000000000000000000000000000000000000000001ccc10000000000000001c10000000
+000000000c10000000000000001ccc100000000000000000000000000000000000000000000000000000000000000000001ccc10000000000000001c10000000
+000000000c10000000000000001ccc100000000000000000000000000000000000000000000000000000000000000000001ccc10000000000000001c10000000
+000000000c10000000000000001ccc100000000000000000000000000000000000000000000000000000000000000000001ccc10000000000000001c10000000
+000000000c10000000000000001ccc100000000000000000000000000000000000000000000000000000000000000000001ccc10000000000000001c10000000
+000000000cc1000000000000001ccc100000000000000000000000000000000000000000000000000000000000000000001ccc1000000000000001cc10000000
+000000000ccc111110000000001ccc100000000111000000000111111111111111111111111111000000000000000000001ccc100000000011111ccc10000000
+000000000ccccccc110000000011c11000000011111000000011cccccccccccccccccccccccc111000000000000000000011c110000000011ccccccc10000000
+000000000ccccccc110000000011111000000011c11000000011ccccccccccccccccccccccccc110000000000000000000111110000000011ccccccc10000000
+000000000ccc111110000000000111000000001ccc100000000111111111111ccccccccccccc11100000000000000000000111000000000011111ccc10000000
+000000000cc1000000000000000000000000001ccc100000000000000000001ccc1111111111110000000000000000000000000000000000000001cc10000000
+000000000c10000000000000000000000000001ccc100000000000000000001ccc10000000000000000000000000000000000000000000000000001c10000000
+000000000c00000000000000000000000000001ccc100000000000000000001ccc10000055555000000000555555000000000000000000000000001c10000000
+000000000c00000000000000000000000000001ccc100000000000000000001ccc10000055555000000000555555000000000000000000000000001c10000000
+000000000c00000000000000000000000000001ccc100000000000000000001ccc10000055555000000000555555000000000000000000000000001c10000000
+000000000c00000000000000000000000000001ccc100000000000000000001ccc100000555ee000000000ee5555000000000000000000000000001c10000000
+000000000c00000000000000000000000000001ccc100000000000000000001ccc100000555ee000000000ee5555000000000000000000000000001c10000000
+000000000c00000000000000000000000000011ccc110000000000000000001ccc10000000055555555555550000000000000000000000000000001c10000000
+000000000c0000000000111111111111111111ccccc11111111111000000001ccc10000000055555555555550000000000000000000000000000001c10000000
+000000000c0000000001cccccccccccccccccccccccccccccccccc100000001ccc10000000055555555555550000000000000000000000000000001c10000000
+000000000c1000000001cccccccccccccccccccccccccccccccccc1000000011c1100000000ccc55555ccc550000000000000000000000000000001c10000000
+000000000c10000000001111111111111111111111111111111111000000000111000000000ccc55555ccc550000000000000000000000000000001c10000000
+000000000c10000000000000000000000000000000000000000000000000000000000000000ccc55555ccc550000000000000000000000000000001c10000000
+000000000c10000000000000000000000000000000000000000000000000000000000000eee555555555555555eee00000000000000000000000001c10000000
+000000000c10000000000000000000000000000000000000000000000000000000000000eee555555555555555eee00000000000000000000000001c10000000
+000000000c10000000000000000000000000000000000000000000000000000000000000eee555555555555555eee00000000000000000000000001c10000000
+000000000c10000000000000000000000000000000000000000000000000000000000000000555555555555555555eee00000000000000000000001c10000000
+000000000c10000000000000000000000000000000000000000000000000000000000000000555555555555555555eee00000000000000000000001c10000000
+000000000c10000000000000000000000000000000000004000300004000000000000000000555555555555555555eee00000000000000000000001c10000000
+000000000c1000000000000000000000000990000000000a00333300444400000d0000d000055555555555555555550000000000000000000000001c10000000
+000000000c111111111111110088880000939900000000aa0333333040044088ded00ded000fff5555555fff5555550000000000000000001111111c10000000
+000000000ccccccccccccccc0808088009a9999000000aaa08033380440048ef07bdd7b0000fff5555555fff555555000000000000000000cccccccc10000000
+0000000000000000000000000b8080b009a99940000aaaa908880880048008eed7bdd7bd000fff5555555fff5555550000000000000000000000000000000000
+0000000000000000000000000bb33b30009994004aaaaa99080880808ef80088d0deed0d000000fff0000000fff0000000000000000000000000000000000000
+0000000000000000000000000b33bb300009400000999990008808008ee80000dd0000dd000000fff0000000fff0000000000000000000000000000000000000
+00000000000000000000000000000000000000000000000000088000088000000dddddd0000000fff0000000fff0000000000000000000000000000000000000
 __gff__
-0000000000000001010100010101010000000000000000010001000101010000000000000000000101010001010101000000000000000000000000010101010000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000202020202000000000000000000000000000000000000000000000002000000000000000000000002000000000000000000000000000000000000000000000000000000000000000000
+0000020000000000000000000000000200000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000200000000000000
 __map__
-0708080808080808080808080808080900000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-1718181818181818181818181818181900000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-17182d2e18180c1c1c0d18182d2e181900000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-17183d3e18181818181818183d3e181900000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-17181818180b001a0a000b181818181900000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-173c180b181d002a3a001d180b183b1900000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-1718181d181b003738001b181d18181900000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-17180c3e18000000000000183d0d181900000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-17181818180c1c1c1c1c0d181818181900000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-17180c2e18000000000000182d0d181900000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-1718181d180c0d00000c0d181d18181900000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-173c181b18000000000000181b183b1900000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-1718181818181818181818181818181900000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-17180c1c1c1c0d18180c1c1c1c0d181900000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-1718181818181818181818181818181900000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-2728282828282828282828282828282900000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+010202020202030402020202022f1f0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+11121314151610172a2b2c12132e1f0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+11222324252600002d777822232e1f0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+110e0f30313233343530310e0f2e1f0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+4142434445464748494a4b4c4d4e1f0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+6b6a534455565758595a5b5c6b6b000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+61616364656667686964656c6e6e000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+71727300007600007900007c7d7e000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+8d8d8384858688888984858c8d6b000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+91929394959697989994959c9d9e0f0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+11a2a3a4a5a6a7a8a9aaabacadbe1f0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+11b2b3b4b5b6b7b8b9babbbcbdbe1f0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+c1c2c3c4c5c6c7c8c9c4c5cccdce1f0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+11d2d3d4d5d6d7d8d2d4d5d3d6be1f0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+11e2e3e4e5e6e7e8e2e3e3e3e6be1f0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+f1f2f2f2f2f2f2f2f2f2f2f2f2fe1f0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 __sfx__
-001000003f0003d00017550185501b5501d550200502205023050255202652022050200501a0501605015550125500d550175001050005000360000100002000030003f0002f0001600003000040000000000000
-0010000000000000000000014050180501b0501e050240502c05014050140501505016050190501d050230502a05015050120501405017050190501c0502105025050280502a0502b05000000000000000000000
+00100000000000000015550185501a5501c5501f0502005022050255502555023050210501d0501b05017550135500d5501600013000110000e0000c0000c0003000030000300000000000000000000000000000
