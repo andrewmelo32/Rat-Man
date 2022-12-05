@@ -5,3 +5,4 @@ Left arrow key goes left.
 Right arrow key goes right.
 Up arrow key goes up.
 Down arrow key goes down.
+X key to fire.
